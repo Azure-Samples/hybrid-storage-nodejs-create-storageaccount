@@ -24,7 +24,7 @@ var resourceClient, storageClient;
 
 //Sample Config
 var randomIds = {};
-var location = 'westus2';
+var location = process.env['AZURE_LOCATION'];
 var accType = 'Standard_LRS';
 var resourceGroupName = _generateRandomId('testrg', randomIds);
 var storageAccountName = _generateRandomId('testacc', randomIds);
@@ -33,7 +33,7 @@ var storageAccountName = _generateRandomId('testacc', randomIds);
 var map = {};
 const fetchUrl = base_url + 'metadata/endpoints?api-version=1.0'
 
-function initialize() {
+function fetchEndpointMetadata() {
   // Setting URL and headers for request
   var options = {
     url: fetchUrl,
@@ -57,23 +57,23 @@ function initialize() {
 }
 
 function main() {
-  var initializePromise = initialize();
-  initializePromise.then(function (result) {
-    var userDetails = result;
+  var endpointData = fetchEndpointMetadata();
+  endpointData.then(function (result) {
+    var metadata = result;
     console.log("Initialized user details");
     // Use user details from here
-    console.log(userDetails)
+    console.log(metadata)
     map["name"] = "AzureStack"
-    map["portalUrl"] = userDetails.portalEndpoint 
+    map["portalUrl"] = metadata.portalEndpoint 
     map["resourceManagerEndpointUrl"] = base_url 
-    map["galleryEndpointUrl"] = userDetails.galleryEndpoint 
-    map["activeDirectoryEndpointUrl"] = userDetails.authentication.loginEndpoint.slice(0, userDetails.authentication.loginEndpoint.lastIndexOf("/") + 1) 
-    map["activeDirectoryResourceId"] = userDetails.authentication.audiences[0] 
-    map["activeDirectoryGraphResourceId"] = userDetails.graphEndpoint 
+    map["galleryEndpointUrl"] = metadata.galleryEndpoint 
+    map["activeDirectoryEndpointUrl"] = metadata.authentication.loginEndpoint.slice(0, metadata.authentication.loginEndpoint.lastIndexOf("/") + 1) 
+    map["activeDirectoryResourceId"] = metadata.authentication.audiences[0] 
+    map["activeDirectoryGraphResourceId"] = metadata.graphEndpoint 
     map["storageEndpointSuffix"] = "." + base_url.substring(base_url.indexOf('.'))  
     map["keyVaultDnsSuffix"] = ".vault" + base_url.substring(base_url.indexOf('.')) 
-    map["managementEndpointUrl"] = userDetails.authentication.audiences[0] 
-    map["validateAuthority"] = "false"
+    map["managementEndpointUrl"] = metadata.authentication.audiences[0] 
+    var isAdfs = metadata.authentication.loginEndpoint.endsWith('adfs')
     Environment.Environment.add(map);
 
     var tokenAudience = map["activeDirectoryResourceId"]
@@ -82,6 +82,11 @@ function main() {
     options["environment"] = Environment.Environment.AzureStack;
     options["tokenAudience"] = tokenAudience;
 
+    if(isAdfs) {
+        tenantId = "adfs"
+        options.environment.validateAuthority = false
+        map["validateAuthority"] = false
+    }
     msRestAzure.loginWithServicePrincipalSecret(clientId, secret, tenantId, options, function (err, credentials) {
       if (err) return console.log(err);
 
@@ -277,12 +282,12 @@ function checkNameAvailability(callback) {
 
 function _validateEnvironmentVariables() {
   var envs = [];
-  if (!process.env['CLIENT_ID']) envs.push('CLIENT_ID');
+  if (!process.env['AZURE_CLIENT_ID']) envs.push('AZURE_CLIENT_ID');
   if (!process.env['ARM_ENDPOINT']) envs.push('ARM_ENDPOINT');
-  if (!process.env['APPLICATION_SECRET']) envs.push('APPLICATION_SECRET');
+  if (!process.env['AZURE_CLIENT_SECRET']) envs.push('AZURE_CLIENT_SECRET');
   if (!process.env['AZURE_SUBSCRIPTION_ID']) envs.push('AZURE_SUBSCRIPTION_ID');
-  if (!process.env['DOMAIN']) envs.push('DOMAIN');
-  if (!process.env['TENANT_ID']) envs.push('TENANT_ID');
+  if (!process.env['AZURE_TENANT_ID']) envs.push('AZURE_TENANT_ID');
+  if (!process.env['AZURE_LOCATION']) envs.push('AZURE_LOCATION');
   if (envs.length > 0) {
     throw new Error(util.format('please set/export the following environment variables: %s', envs.toString()));
   }
