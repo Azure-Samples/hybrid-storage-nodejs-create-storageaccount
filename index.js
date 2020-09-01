@@ -4,6 +4,25 @@
  * license information.
  */
 'use strict';
+/*
+To use custom local certificate for NodeJS on Windows 10:
+
+1. Get your certificate object (Powershell Core script):
+$mycert = Get-ChildItem Cert:\CurrentUser\Root | Where-Object Subject -eq "CN=<CERTIFICATE NAME>"
+
+2. Export the certificate as a .cer file
+Export-Certificate -Type CERT -FilePath root.cer -Cert $mycert
+
+3. Convert to .pem using openssl tool
+openssl x509 -inform der -in mycert.cer -out mypem.pem
+
+4. Set NODE_EXTRA_CA_CERTS environment variable:
+NODE_EXTRA_CA_CERTS=<PATH TO mypem.pem file>
+
+Or you can add the following line to disable TLS validation without setting a local .pem file:
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+*/
+
 var Environment = require("@azure/ms-rest-azure-env");
 var util = require('util');
 var async = require('async');
