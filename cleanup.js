@@ -9,8 +9,8 @@ var Environment = require("@azure/ms-rest-azure-env");
 var util = require('util');
 var async = require('async');
 var msRestAzure = require('@azure/ms-rest-nodeauth');
-var ResourceManagementClient = require('@azure/arm-resources-profile-hybrid-2019-03-01').ResourceManagementClient;
-var StorageManagementClient = require('@azure/arm-storage-profile-2019-03-01-hybrid').StorageManagementClient;
+var ResourceManagementClient = require('@azure/arm-resources-profile-2020-09-01-hybrid').ResourceManagementClient;
+var StorageManagementClient = require('@azure/arm-storage-profile-2020-09-01-hybrid').StorageManagementClient;
 const request = require('request');
 _validateEnvironmentVariables();
 _validateParameters();
@@ -40,6 +40,7 @@ function deleteResourceGroup(callback) {
 function _validateEnvironmentVariables() {
   var envs = [];
   if (!process.env['AZURE_CLIENT_ID']) envs.push('AZURE_CLIENT_ID');
+  if (!process.env['AZURE_TENANT_ID']) envs.push('AZURE_TENANT_ID');
   if (!process.env['ARM_ENDPOINT']) envs.push('ARM_ENDPOINT');
   if (!process.env['AZURE_CLIENT_SECRET']) envs.push('AZURE_CLIENT_SECRET');
   if (!process.env['AZURE_SUBSCRIPTION_ID']) envs.push('AZURE_SUBSCRIPTION_ID');
