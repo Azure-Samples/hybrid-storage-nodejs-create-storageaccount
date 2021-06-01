@@ -3,61 +3,46 @@
  * Licensed under the MIT License. See License.txt in the project root for
  * license information.
  */
-'use strict';
-/*
-To use custom local certificate for NodeJS on Windows 10:
-
-1. Get your certificate object (Powershell Core script):
-$mycert = Get-ChildItem Cert:\CurrentUser\Root | Where-Object Subject -eq "CN=<CERTIFICATE NAME>"
-
-2. Export the certificate as a .cer file
-Export-Certificate -Type CERT -FilePath root.cer -Cert $mycert
-
-3. Convert to .pem using openssl tool
-openssl x509 -inform der -in mycert.cer -out mypem.pem
-
-4. Set NODE_EXTRA_CA_CERTS environment variable:
-NODE_EXTRA_CA_CERTS=<PATH TO mypem.pem file>
-
-Or you can add the following line to disable TLS validation without setting a local .pem file:
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-*/
+"use strict";
 
 var Environment = require("@azure/ms-rest-azure-env");
-var util = require('util');
-var async = require('async');
-var msRestAzure = require('@azure/ms-rest-nodeauth');
-var ResourceManagementClient = require('@azure/arm-resources-profile-hybrid-2019-03-01').ResourceManagementClient;
-var StorageManagementClient = require('@azure/arm-storage-profile-2019-03-01-hybrid').StorageManagementClient;
-const request = require('request');
-const https = require('https');
-const fetch = require("node-fetch");
-const requestPromise = util.promisify(request);
+var util = require("util");
+var async = require("async");
+var msRestAzure = require("@azure/ms-rest-nodeauth");
+var ResourceManagementClient = require("@azure/arm-resources-profile-2020-09-01-hybrid").ResourceManagementClient;
+var StorageManagementClient = require("@azure/arm-storage-profile-2020-09-01-hybrid").StorageManagementClient;
+const request = require("request");
+
+const clientIdEnvName = "AZURE_SP_APP_ID";
+const tenantIdEnvName = "AZURE_TENANT_ID";
+const secretEnvName = "AZURE_SP_APP_SECRET";
+const subscriptionIdEnvName = "AZURE_SUBSCRIPTION_ID";
+const armEndpointEnvName = "AZURE_ARM_ENDPOINT";
+const locationEnvName = "AZURE_LOCATION";
+
  _validateEnvironmentVariables();
-var clientId = process.env['AZURE_CLIENT_ID'];
-var tenantId = process.env['AZURE_TENANT_ID']; //"adfs"
-var secret = process.env['AZURE_CLIENT_SECRET'];
-var subscriptionId = process.env['AZURE_SUBSCRIPTION_ID'];
-var base_url = process.env['ARM_ENDPOINT'];
+var clientId = process.env[clientIdEnvName];
+var tenantId = process.env[tenantIdEnvName];
+var secret = process.env[secretEnvName];
+var subscriptionId = process.env[subscriptionIdEnvName];
+var armEndpoint = process.env[armEndpointEnvName];
+var location = process.env[locationEnvName];
 var resourceClient, storageClient;
 
-//Sample Config
-var randomIds = {};
-var location = process.env['AZURE_LOCATION'];
-var accType = 'Standard_LRS';
-var resourceGroupName = _generateRandomId('testrg', randomIds);
-var storageAccountName = _generateRandomId('testacc', randomIds);
+var accType = "Standard_LRS";
+var resourceGroupName = "azure-sample-rg";
+var storageAccountName = "teststorage";
 
 // create a map
 var map = {};
-const fetchUrl = base_url + 'metadata/endpoints?api-version=1.0'
+const fetchUrl = armEndpoint + "metadata/endpoints?api-version=2019-10-01";
 
 function fetchEndpointMetadata() {
   // Setting URL and headers for request
   var options = {
     url: fetchUrl,
     headers: {
-      'User-Agent': 'request'
+      "User-Agent": "request"
     },
     rejectUnauthorized: false
   };
@@ -70,62 +55,47 @@ function fetchEndpointMetadata() {
       } else {
         resolve(JSON.parse(body));
       }
-    })
-  })
+    });
+  });
 
 }
 
 function main() {
   var endpointData = fetchEndpointMetadata();
   endpointData.then(function (result) {
-    var metadata = result;
+    var metadata = result[0];
     console.log("Initialized user details");
-    // Use user details from here
-    console.log(metadata)
-    map["name"] = "AzureStack"
-    map["portalUrl"] = metadata.portalEndpoint 
-    map["resourceManagerEndpointUrl"] = base_url 
-    map["galleryEndpointUrl"] = metadata.galleryEndpoint 
-    map["activeDirectoryEndpointUrl"] = metadata.authentication.loginEndpoint.slice(0, metadata.authentication.loginEndpoint.lastIndexOf("/") + 1) 
-    map["activeDirectoryResourceId"] = metadata.authentication.audiences[0] 
-    map["activeDirectoryGraphResourceId"] = metadata.graphEndpoint 
-    map["storageEndpointSuffix"] = "." + base_url.substring(base_url.indexOf('.'))  
-    map["keyVaultDnsSuffix"] = ".vault" + base_url.substring(base_url.indexOf('.')) 
-    map["managementEndpointUrl"] = metadata.authentication.audiences[0] 
-    var isAdfs = metadata.authentication.loginEndpoint.endsWith('adfs')
+    console.log(metadata);
+    map["name"] = "AzureStack";
+    map["portalUrl"] = metadata.portal;
+    map["resourceManagerEndpointUrl"] = armEndpoint;
+    map["galleryEndpointUrl"] = metadata.gallery;
+    map["activeDirectoryEndpointUrl"] = metadata.authentication.loginEndpoint.slice(0, metadata.authentication.loginEndpoint.lastIndexOf("/") + 1);
+    map["activeDirectoryResourceId"] = metadata.authentication.audiences[0];
+    map["activeDirectoryGraphResourceId"] = metadata.graph;
+    map["storageEndpointSuffix"] = metadata.suffixes.storage;
+    map["keyVaultDnsSuffix"] = metadata.suffixes.keyVaultDns;
+    map["managementEndpointUrl"] = metadata.authentication.audiences[0];
+    var isAdfs = metadata.authentication.loginEndpoint.endsWith("adfs") || metadata.authentication.loginEndpoint.endsWith("adfs/");
     Environment.Environment.add(map);
 
-    var tokenAudience = map["activeDirectoryResourceId"]
+    var tokenAudience = map["activeDirectoryResourceId"];
 
     var options = {};
     options["environment"] = Environment.Environment.AzureStack;
     options["tokenAudience"] = tokenAudience;
 
     if(isAdfs) {
-        tenantId = "adfs"
-        options.environment.validateAuthority = false
-        map["validateAuthority"] = false
+      tenantId = "adfs";
+      options.environment.validateAuthority = false;
+      map["validateAuthority"] = false;
     }
     msRestAzure.loginWithServicePrincipalSecret(clientId, secret, tenantId, options, function (err, credentials) {
       if (err) return console.log(err);
 
-      var clientOptions = {};
-      clientOptions["baseUri"] = base_url;
-      resourceClient = new ResourceManagementClient(credentials, subscriptionId, clientOptions);
-      storageClient = new StorageManagementClient(credentials, subscriptionId, clientOptions);
-
-      // Work flow of this sample:
-      // Setup. Create a resource group 
-      // 1. Create a storage account
-      // 2. Get all the account properties
-      // 3. List all the storage accounts in a resource group
-      // 4. List all the storage accounts in a subscription
-      // 5. Get the storage account keys for a given storage account
-      // 6. Rgenerate account keys for a given storage account
-      // 7. Update storage account properties
-      // 8. Check if the storage account name is available
-      // 9. Get the current usage count and the limit for resources under the current subscription
-
+      resourceClient = new ResourceManagementClient(credentials, subscriptionId);
+      storageClient = new StorageManagementClient(credentials, subscriptionId);
+      
       async.series([
         function (callback) {
           //Setup
@@ -142,7 +112,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\nThe created storage account result is: \n' + util.inspect(result, { depth: null }));
+            console.log("\nThe created storage account result is: \n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -152,7 +122,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\n' + util.inspect(result, { depth: null }));
+            console.log("\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -162,7 +132,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\n' + util.inspect(result, { depth: null }));
+            console.log("\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -172,7 +142,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\n' + util.inspect(result, { depth: null }));
+            console.log("\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -182,7 +152,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\n' + util.inspect(result, { depth: null }));
+            console.log("\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -192,7 +162,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\n' + util.inspect(result, { depth: null }));
+            console.log("\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -202,7 +172,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\nUpdated result is:\n' + util.inspect(result, { depth: null }));
+            console.log("\nUpdated result is:\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         },
@@ -212,7 +182,7 @@ function main() {
             if (err) {
               return callback(err);
             }
-            console.log('\n' + util.inspect(result, { depth: null }));
+            console.log("\n" + util.inspect(result, { depth: null }));
             callback(null, result);
           });
         }
@@ -221,25 +191,25 @@ function main() {
         // Once above operations finish, cleanup and exit.
         function (err, results) {
           if (err) {
-            console.log(util.format('\n??????Error occurred in one of the operations.\n%s',
+            console.log(util.format("\n??????Error occurred in one of the operations.\n%s",
               util.inspect(err, { depth: null })));
           }
-          console.log('\n###### Exit ######\n')
-          console.log(util.format('Please execute the following script for cleanup:\nnode cleanup.js %s %s', resourceGroupName, storageAccountName));
+          console.log("\n###### Exit ######\n");
+          console.log(util.format("Please execute the following script for cleanup:\nnode cleanup.js %s %s", resourceGroupName, storageAccountName));
           process.exit();
         });
     });
   }, function (err) {
     console.log(err);
-  })
+  });
 }
 
 main();
 
 // Helper functions
 function createResourceGroup(callback) {
-  var groupParameters = { location: location, tags: { sampletag: 'sampleValue' } };
-  console.log('\nCreating resource group: ' + resourceGroupName);
+  var groupParameters = { location: location, tags: { sampletag: "sampleValue" } };
+  console.log("\nCreating resource group: " + resourceGroupName);
   return resourceClient.resourceGroups.createOrUpdate(resourceGroupName, groupParameters, callback);
 }
 
@@ -249,66 +219,66 @@ function createStorageAccount(callback) {
     sku: {
       name: accType,
     },
-    kind: 'Storage',
+    kind: "Storage",
     tags: {
-      tag1: 'val1',
-      tag2: 'val2'
+      tag1: "val1",
+      tag2: "val2"
     }
   };
-  console.log('\n-->Creating storage account: ' + storageAccountName + ' with parameters:\n' + util.inspect(createParameters));
+  console.log("\n-->Creating storage account: " + storageAccountName + " with parameters:\n" + util.inspect(createParameters));
   return storageClient.storageAccounts.create(resourceGroupName, storageAccountName, createParameters, callback);
 }
 
 function listStorageAccountsByResourceGroup(callback) {
-  console.log('\n-->Listing storage accounts in the resourceGroup : ' + resourceGroupName);
+  console.log("\n-->Listing storage accounts in the resourceGroup : " + resourceGroupName);
   return storageClient.storageAccounts.listByResourceGroup(resourceGroupName, callback);
 }
 
 function listStorageAccounts(callback) {
-  console.log('\n-->Listing storage accounts in the current subscription.');
+  console.log("\n-->Listing storage accounts in the current subscription.");
   return storageClient.storageAccounts.list(callback);
 }
 
 function listStorageAccountKeys(callback) {
-  console.log('\n-->Listing storage account keys for account: ' + storageAccountName);
+  console.log("\n-->Listing storage account keys for account: " + storageAccountName);
   return storageClient.storageAccounts.listKeys(resourceGroupName, storageAccountName, callback);
 }
 
 function regenerateStorageAccountKeys(callback) {
-  console.log('\n-->Regenerating storage account keys for account: ' + storageAccountName);
-  return storageClient.storageAccounts.regenerateKey(resourceGroupName, storageAccountName, 'key1', callback);
+  console.log("\n-->Regenerating storage account keys for account: " + storageAccountName);
+  return storageClient.storageAccounts.regenerateKey(resourceGroupName, storageAccountName, "key1", callback);
 }
 
 function getStorageAccount(callback) {
-  console.log('\n-->Getting info of storage account: ' + storageAccountName);
+  console.log("\n-->Getting info of storage account: " + storageAccountName);
   return storageClient.storageAccounts.getProperties(resourceGroupName, storageAccountName, callback);
 }
 
 function updateStorageAccount(callback) {
   var updateParameters = {
     sku: {
-      name: 'Standard_LRS'
+      name: "Standard_LRS"
     }
   };
-  console.log('\n-->Updating storage account : ' + storageAccountName + ' with parameters:\n' + util.inspect(updateParameters));
+  console.log("\n-->Updating storage account : " + storageAccountName + " with parameters:\n" + util.inspect(updateParameters));
   return storageClient.storageAccounts.update(resourceGroupName, storageAccountName, updateParameters, callback);
 }
 
 function checkNameAvailability(callback) {
-  console.log('\n-->Checking if the storage account name : ' + storageAccountName + ' is available.');
+  console.log("\n-->Checking if the storage account name : " + storageAccountName + " is available.");
   return storageClient.storageAccounts.checkNameAvailability(storageAccountName, callback);
 }
 
 function _validateEnvironmentVariables() {
   var envs = [];
-  if (!process.env['AZURE_CLIENT_ID']) envs.push('AZURE_CLIENT_ID');
-  if (!process.env['ARM_ENDPOINT']) envs.push('ARM_ENDPOINT');
-  if (!process.env['AZURE_CLIENT_SECRET']) envs.push('AZURE_CLIENT_SECRET');
-  if (!process.env['AZURE_SUBSCRIPTION_ID']) envs.push('AZURE_SUBSCRIPTION_ID');
-  if (!process.env['AZURE_TENANT_ID']) envs.push('AZURE_TENANT_ID');
-  if (!process.env['AZURE_LOCATION']) envs.push('AZURE_LOCATION');
+  if (!process.env[clientIdEnvName]) envs.push(clientIdEnvName);
+  if (!process.env[armEndpointEnvName]) envs.push(armEndpointEnvName);
+  if (!process.env[secretEnvName]) envs.push(secretEnvName);
+  if (!process.env[subscriptionIdEnvName]) envs.push(subscriptionIdEnvName);
+  if (!process.env[tenantIdEnvName]) envs.push(tenantIdEnvName);
+  if (!process.env[locationEnvName]) envs.push(locationEnvName);
   if (envs.length > 0) {
-    throw new Error(util.format('please set/export the following environment variables: %s', envs.toString()));
+    throw new Error(util.format("please set/export the following environment variables: %s", envs.toString()));
   }
 }
 
