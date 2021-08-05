@@ -5,13 +5,13 @@
  */
 "use strict";
 
-var Environment = require("@azure/ms-rest-azure-env");
-var util = require("util");
-var async = require("async");
-var msRestAzure = require("@azure/ms-rest-nodeauth");
-var ResourceManagementClient = require("@azure/arm-resources-profile-2020-09-01-hybrid").ResourceManagementClient;
-var StorageManagementClient = require("@azure/arm-storage-profile-2020-09-01-hybrid").StorageManagementClient;
-const request = require("request");
+const Environment = require("@azure/ms-rest-azure-env");
+const util = require("util");
+const async = require("async");
+const msRestAzure = require("@azure/ms-rest-nodeauth");
+const ResourceManagementClient = require("@azure/arm-resources-profile-2020-09-01-hybrid").ResourceManagementClient;
+const StorageManagementClient = require("@azure/arm-storage-profile-2020-09-01-hybrid").StorageManagementClient;
+const axios = require("axios");
 
 const clientIdEnvName = "AZURE_SP_APP_ID";
 const tenantIdEnvName = "AZURE_TENANT_ID";
@@ -28,36 +28,23 @@ var subscriptionId = process.env[subscriptionIdEnvName];
 var armEndpoint = process.env[armEndpointEnvName];
 var location = process.env[locationEnvName];
 var resourceClient, storageClient;
-
 var accType = "Standard_LRS";
 var resourceGroupName = "azure-sample-rg";
 var storageAccountName = "teststorage";
-
-// create a map
 var map = {};
+
+if (armEndpoint.slice(-1) != "/") {
+  armEndpoint = armEndpoint + "/";
+}
 const fetchUrl = armEndpoint + "metadata/endpoints?api-version=2019-10-01";
 
-function fetchEndpointMetadata() {
-  // Setting URL and headers for request
-  var options = {
-    url: fetchUrl,
-    headers: {
-      "User-Agent": "request"
-    },
-    rejectUnauthorized: false
-  };
-  // Return new promise 
-  return new Promise(function (resolve, reject) {
-    // Do async job
-    request.get(options, function (err, resp, body) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(JSON.parse(body));
-      }
-    });
-  });
-
+async function fetchEndpointMetadata() {
+  try {
+      const response = await axios.get(fetchUrl);
+      return response.data;
+  } catch (error) {
+      console.error(error);
+  }
 }
 
 function main() {
@@ -195,7 +182,7 @@ function main() {
               util.inspect(err, { depth: null })));
           }
           console.log("\n###### Exit ######\n");
-          console.log(util.format("Please execute the following script for cleanup:\nnode cleanup.js %s %s", resourceGroupName, storageAccountName));
+          console.log(util.format("Please execute the following script for cleanup:\nnode cleanup.js"));
           process.exit();
         });
     });
@@ -280,15 +267,4 @@ function _validateEnvironmentVariables() {
   if (envs.length > 0) {
     throw new Error(util.format("please set/export the following environment variables: %s", envs.toString()));
   }
-}
-
-function _generateRandomId(prefix, exsitIds) {
-  var newNumber;
-  while (true) {
-    newNumber = prefix + Math.floor(Math.random() * 10000);
-    if (!exsitIds || !(newNumber in exsitIds)) {
-      break;
-    }
-  }
-  return newNumber;
 }
